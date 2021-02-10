@@ -6,4 +6,4 @@ def millisecond():
 
 
 def millisecond_str():
-    return str(millisecond())
+    return str(int(millisecond()))

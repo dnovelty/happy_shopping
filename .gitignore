@@ -3,6 +3,7 @@ happy_shopping/*.png
 happy_shopping/cookies/
 happy_shopping/*.log
 happy_shopping/*.log.*
+happy_shopping/*.cookie
 .idea/
 .vscode
 *.log

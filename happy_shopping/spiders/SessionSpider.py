@@ -1,10 +1,11 @@
 import json
 import os
 import time
+from http.cookiejar import LWPCookieJar, MozillaCookieJar, CookieJar
 
 import scrapy
 
-from constant import meta_cookies_key
+from constant import meta_cookies_key, meta_cookie_jar_key
 from exception import BizException
 from log import session_logger
 from mathUtils import int_between
@@ -19,14 +20,32 @@ class SessionSpider(scrapy.Spider):
     retry_times = 20
     retry_time = 0
     refresh_seconds = 5
-    def start_requests(self):
-        urls = [
-            'https://passport.jd.com/new/login.aspx',
-        ]
-        for url in urls:
-            yield scrapy.Request(url=url, callback=self.parse)
 
-    def parse(self, response):
+    def __init__(self, name=None, **kwargs):
+        super().__init__(name, **kwargs)
+        self.nick_name = 'jd'
+
+    def start_requests(self):
+        callback = 'jQuery{}'.format(int_between(1000000, 9999999))
+        _ = millisecond_str()
+        url = f'https://passport.jd.com/user/petName/getUserInfoForMiniJd.action?callback={callback}&_={_}'
+
+        headers = {
+            'Referer': 'https://order.jd.com/center/list.action'
+        }
+        yield scrapy.Request(url=url, callback=self.login_detect, headers=headers)
+
+    def parse(self, response, **kwargs):
+        pass
+
+    def login_detect(self, response):
+        rsp_json = callback_2_json(response.text)
+        if not rsp_json:
+            return self.do_login(response)
+        else:
+            return self._session_holder(response)
+
+    def do_login(self, response):
         appid = 133
         size = 147
         t = millisecond_str()
@@ -75,7 +94,7 @@ class SessionSpider(scrapy.Spider):
                 return self._token_fetch_api(response)
             else:
                 break
-            SessionSpider.retry_time = SessionSpider.retry_time+1
+            SessionSpider.retry_time = SessionSpider.retry_time + 1
 
         if not 'ticket' in resp_json:
             raise BizException("无法获取token进行登录验证")
@@ -85,7 +104,8 @@ class SessionSpider(scrapy.Spider):
             'Referer': 'https://passport.jd.com/uc/login?ltype=logout',
         }
 
-        return scrapy.Request(url=url, headers=headers, callback=self._token_validate_result)
+        return scrapy.Request(url=url, headers=headers, callback=self._token_validate_result,
+                              meta={meta_cookies_key: {}})
 
     def _token_validate_result(self, response):
         if not status_ok(response):
@@ -93,10 +113,21 @@ class SessionSpider(scrapy.Spider):
         resp_json = json.loads(response.body)
         if resp_json['returnCode'] == 0:
             logger.info("京东登录验证成功")
+            self.save_cookies(response)
             return self._session_holder(response)
         else:
             logger.info(resp_json)
             raise BizException('验证token失败')
+
+    def save_cookies(self, response):
+        jar = response.meta[meta_cookie_jar_key]
+        filename = 'jd.cookie'
+        cj = CookieJar()
+        cookie = MozillaCookieJar(filename)
+        # for cookie in jar.jar._cookies.items():
+        #     cookie.set_cookie(cookie)
+        cookie.__dict__.update(jar.jar.__dict__)
+        cookie.save()
 
     def _open_image(self, image_file):
         logger.info("打开qrqrqrqrqrqrqrqrq")
@@ -135,4 +166,3 @@ class SessionSpider(scrapy.Spider):
             }
             time.sleep(SessionSpider.refresh_seconds)
             return scrapy.Request(url=url, callback=self._session_holder, headers=headers)
-

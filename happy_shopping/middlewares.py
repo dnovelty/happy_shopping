@@ -9,7 +9,7 @@ from scrapy import signals
 from itemadapter import is_item, ItemAdapter
 from scrapy.downloadermiddlewares.cookies import CookiesMiddleware
 
-from constant import meta_cookies_key
+from constant import meta_cookies_key, meta_cookie_jar_key
 
 
 class HappyShoppingSpiderMiddleware:
@@ -115,4 +115,5 @@ class ReturnCookieJarCookiesMiddleware(CookiesMiddleware):
             jar = self.jars[cookiejarkey]
             cookie_map.update(dict_from_cookiejar(jar))
             request.meta[meta_cookies_key] = cookie_map
+            request.meta[meta_cookie_jar_key] = jar
         return process_response
