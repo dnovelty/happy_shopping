@@ -1,0 +1,10 @@
+happy_shopping/__pycache__/
+happy_shopping/*.png
+happy_shopping/cookies/
+happy_shopping/*.log
+happy_shopping/*.log.*
+.idea/
+.vscode
+*.log
+*.png
+*.log.*
