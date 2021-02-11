@@ -5,7 +5,7 @@ from http.cookiejar import LWPCookieJar, MozillaCookieJar, CookieJar
 
 import scrapy
 
-from constant import meta_cookies_key, meta_cookie_jar_key
+from constant import meta_cookie_map_key, meta_cookie_jar_key
 from exception import BizException
 from log import session_logger
 from mathUtils import int_between
@@ -19,11 +19,14 @@ class SessionSpider(scrapy.Spider):
     name = "SessionSpider"
     retry_times = 20
     retry_time = 0
-    refresh_seconds = 5
+    refresh_seconds = 3600
+    filename = 'jd.cookie'
 
     def __init__(self, name=None, **kwargs):
         super().__init__(name, **kwargs)
         self.nick_name = 'jd'
+        self.trace_cookie_jar = True
+        self.trace_cookie_map = True
 
     def start_requests(self):
         callback = 'jQuery{}'.format(int_between(1000000, 9999999))
@@ -33,7 +36,13 @@ class SessionSpider(scrapy.Spider):
         headers = {
             'Referer': 'https://order.jd.com/center/list.action'
         }
-        yield scrapy.Request(url=url, callback=self.login_detect, headers=headers)
+        request = scrapy.Request(url=url, callback=self.login_detect, headers=headers)
+        if os.path.exists(SessionSpider.filename):
+            cookie = LWPCookieJar(SessionSpider.filename)
+            cookie.load(ignore_discard=True, ignore_expires=True)
+            request.meta[meta_cookie_jar_key] = cookie
+        yield request
+
 
     def parse(self, response, **kwargs):
         pass
@@ -54,7 +63,7 @@ class SessionSpider(scrapy.Spider):
         headers = {
             'Referer': 'https://passport.jd.com/new/login.aspx'
         }
-        return scrapy.Request(url=url, headers=headers, callback=self.open_qr_image, meta={meta_cookies_key: {}})
+        return scrapy.Request(url=url, headers=headers, callback=self.open_qr_image)
 
     def open_qr_image(self, response):
         QRCode_file = 'QRcode.png'
@@ -68,14 +77,14 @@ class SessionSpider(scrapy.Spider):
     def _token_fetch_api(self, response):
         appid = '133'
         callback = 'jQuery{}'.format(int_between(1000000, 9999999))
-        token = response.meta[meta_cookies_key]['wlfstk_smdl']
+        token = response.meta[meta_cookie_map_key]['wlfstk_smdl']
         _ = millisecond_str()
 
         headers = {
             'Referer': 'https://passport.jd.com/new/login.aspx',
         }
         url = f'https://qr.m.jd.com/check?appid={appid}&callback={callback}&token={token}&_={_}'
-        return scrapy.Request(url=url, callback=self._token_validate_api, headers=headers, meta={meta_cookies_key: {}})
+        return scrapy.Request(url=url, callback=self._token_validate_api, headers=headers)
 
     def _token_validate_api(self, response):
         retry = False
@@ -104,8 +113,7 @@ class SessionSpider(scrapy.Spider):
             'Referer': 'https://passport.jd.com/uc/login?ltype=logout',
         }
 
-        return scrapy.Request(url=url, headers=headers, callback=self._token_validate_result,
-                              meta={meta_cookies_key: {}})
+        return scrapy.Request(url=url, headers=headers, callback=self._token_validate_result)
 
     def _token_validate_result(self, response):
         if not status_ok(response):
@@ -113,7 +121,6 @@ class SessionSpider(scrapy.Spider):
         resp_json = json.loads(response.body)
         if resp_json['returnCode'] == 0:
             logger.info("京东登录验证成功")
-            self.save_cookies(response)
             return self._session_holder(response)
         else:
             logger.info(resp_json)
@@ -121,16 +128,15 @@ class SessionSpider(scrapy.Spider):
 
     def save_cookies(self, response):
         jar = response.meta[meta_cookie_jar_key]
-        filename = 'jd.cookie'
-        cj = CookieJar()
-        cookie = MozillaCookieJar(filename)
-        # for cookie in jar.jar._cookies.items():
-        #     cookie.set_cookie(cookie)
-        cookie.__dict__.update(jar.jar.__dict__)
-        cookie.save()
+        cookie = LWPCookieJar(SessionSpider.filename)
+        # for key, values in jar._cookies.items():
+        #     for key_1,values_1 in values.items():
+        #         for key_2, values_2 in values_1.items():
+        #             cookie.set_cookie(values_2)
+        cookie.__dict__.update(jar.__dict__)
+        cookie.save(ignore_discard=True, ignore_expires=True)
 
     def _open_image(self, image_file):
-        logger.info("打开qrqrqrqrqrqrqrqrq")
         if os.name == "nt":
             os.system('start ' + image_file)  # for Windows
         else:
@@ -143,26 +149,27 @@ class SessionSpider(scrapy.Spider):
                 os.system("open " + image_file)  # for Mac
 
     def _session_holder(self, response):
-        logger.info(response.text)
-        while True:
-            url = 'https://order.jd.com/center/list.action'
-            headers = {
-                ':authority': 'order.jd.com',
-                ':method': 'GET',
-                ':path': '/center/list.action',
-                ':scheme': 'https',
-                'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-                'accept-encoding': 'gzip, deflate, br',
-                'accept-language': 'zh-CN,zh;q=0.9',
-                'cache-control': 'max-age=0',
+        self.save_cookies(response)
+        time.sleep(SessionSpider.refresh_seconds)
+        url = 'https://order.jd.com/center/list.action'
+        headers = {
+            ':authority': 'order.jd.com',
+            ':method': 'GET',
+            ':path': '/center/list.action',
+            ':scheme': 'https',
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'accept-encoding': 'gzip, deflate, br',
+            'accept-language': 'zh-CN,zh;q=0.9',
+            'cache-control': 'max-age=0',
 
-                'sec-ch-ua': '"Chromium";v="88", "Google Chrome";v="88", ";Not A Brand";v="99"',
-                'sec-ch-ua-mobile': '?0',
-                'sec-fetch-dest': 'document',
-                'sec-fetch-mode': 'navigate',
-                'sec-fetch-site': 'same-site',
-                'sec-fetch-user': '?1',
-                'upgrade-insecure-requests': '1',
-            }
-            time.sleep(SessionSpider.refresh_seconds)
-            return scrapy.Request(url=url, callback=self._session_holder, headers=headers)
+            'sec-ch-ua': '"Chromium";v="88", "Google Chrome";v="88", ";Not A Brand";v="99"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'same-site',
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1',
+        }
+        yield scrapy.Request(url=url, callback=self._session_holder, headers=headers)
+
+

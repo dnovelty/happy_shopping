@@ -9,7 +9,7 @@ from scrapy import signals
 from itemadapter import is_item, ItemAdapter
 from scrapy.downloadermiddlewares.cookies import CookiesMiddleware
 
-from constant import meta_cookies_key, meta_cookie_jar_key
+from constant import meta_cookie_map_key, meta_cookie_jar_key
 
 
 class HappyShoppingSpiderMiddleware:
@@ -107,13 +107,41 @@ class HappyShoppingDownloaderMiddleware:
 
 class ReturnCookieJarCookiesMiddleware(CookiesMiddleware):
 
-    def process_response(self, request, response, spider):
-        process_response = super().process_response(request, response, spider)
-        if meta_cookies_key in request.meta:
+
+    def process_request(self, request, spider):
+        """
+        判断request.meta中是否有cookiejar，有则添加到当前cookiemiddlewares中。
+        :param request:
+        :param spider:
+        :return:
+        """
+        if meta_cookie_jar_key in request.meta:
+            request_jar = request.meta[meta_cookie_jar_key]
             cookiejarkey = request.meta.get("cookiejar")
-            cookie_map = request.meta.get(meta_cookies_key)
             jar = self.jars[cookiejarkey]
-            cookie_map.update(dict_from_cookiejar(jar))
-            request.meta[meta_cookies_key] = cookie_map
-            request.meta[meta_cookie_jar_key] = jar
+            for key, values in request_jar._cookies.items():
+                for key_1, values_1 in values.items():
+                    for key_2, values_2 in values_1.items():
+                        jar.set_cookie(values_2)
+        super().process_request(request, spider)
+
+    def process_response(self, request, response, spider):
+        """
+        如果spider有属性trace_cookie_jar、trace_cookie_map且为TRUE表示所有请求要返回cookiejar和cookiemap给response。
+        如果request中有meta_cookie_jar_key、meta_cookie_map_key表示当前请求中要返回cookiejar和cookiemap给response。
+        :param request:
+        :param response:
+        :param spider:
+        :return:
+        """
+        process_response = super().process_response(request, response, spider)
+        if meta_cookie_jar_key in request.meta or spider.trace_cookie_jar:
+            cookiejarkey = request.meta.get("cookiejar")
+            jar = self.jars[cookiejarkey]
+            request.meta[meta_cookie_jar_key] = jar.jar
+        if meta_cookie_map_key in request.meta or spider.trace_cookie_map:
+            cookiejarkey = request.meta.get("cookiejar")
+            jar = self.jars[cookiejarkey]
+            cookie_map = dict_from_cookiejar(jar.jar)
+            request.meta[meta_cookie_map_key] = cookie_map
         return process_response
